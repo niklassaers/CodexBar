@@ -155,6 +155,9 @@ extension StatusItemController {
     private func openSettings(tab: PreferencesTab) {
         DispatchQueue.main.async {
             self.preferencesSelection.tab = tab
+            // Promote from LSUIElement/accessory to regular app BEFORE
+            // opening the window so macOS allows keyboard focus transfer.
+            NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
             NotificationCenter.default.post(
                 name: .codexbarOpenSettings,

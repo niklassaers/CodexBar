@@ -165,10 +165,13 @@ struct CodexOAuthFetchStrategy: ProviderFetchStrategy {
 
     private static func resolveCredentials(_ env: [String: String]) throws -> CodexOAuthCredentials {
         if let envToken = ProviderTokenResolver.codexOAuthToken(environment: env) {
+            // Pass the access token as idToken so resolveAccountEmail can
+            // attempt JWT parsing — OpenAI access tokens are JWTs that
+            // typically carry email claims.
             return CodexOAuthCredentials(
                 accessToken: envToken,
                 refreshToken: "",
-                idToken: nil,
+                idToken: envToken,
                 accountId: nil,
                 lastRefresh: nil)
         }

@@ -22,15 +22,20 @@ struct HiddenWindowView: View {
                     KeychainMigration.migrateIfNeeded()
                 }.value
             }
-            // Also catch when the Settings window first appears (e.g. opened via
-            // the SwiftUI lifecycle rather than the notification path).
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeMainNotification)) { note in
+            // When the last key-capable window closes, revert to menu-bar-only
+            // so the app disappears from the Dock and Cmd-Tab switcher.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
                 guard let window = note.object as? NSWindow,
                       window.canBecomeKey,
                       window.title != "CodexBarLifecycleKeepalive"
                 else { return }
-                Task { @MainActor in
-                    Self.forceSettingsWindowKey()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { @MainActor in
+                    let hasVisibleKeyWindow = NSApp.windows.contains {
+                        $0.isVisible && $0.canBecomeKey && $0.title != "CodexBarLifecycleKeepalive"
+                    }
+                    if !hasVisibleKeyWindow {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
                 }
             }
             .onAppear {
@@ -55,15 +60,29 @@ struct HiddenWindowView: View {
     @MainActor
     private static func forceSettingsWindowKey() {
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        // Give the window a moment to appear, then make it key.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { @MainActor in
-            for window in NSApp.windows where window.isVisible && window.canBecomeKey
-                && window.title != "CodexBarLifecycleKeepalive"
-            {
-                window.makeKeyAndOrderFront(nil)
-                break
+        // Retry activation several times with increasing delays.
+        // The SwiftUI Settings window is created asynchronously and may not
+        // exist on the first attempt; the activation policy change also needs
+        // a run-loop cycle to take effect before the app can receive focus.
+        for delay in [0.05, 0.15, 0.3, 0.5, 0.8] as [TimeInterval] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { @MainActor in
+                Self.activateAndFocusSettingsWindow()
             }
+        }
+    }
+
+    @MainActor
+    private static func activateAndFocusSettingsWindow() {
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        for window in NSApp.windows where window.isVisible && window.canBecomeKey
+            && window.title != "CodexBarLifecycleKeepalive"
+        {
+            window.makeKeyAndOrderFront(nil)
+            break
         }
     }
 }
